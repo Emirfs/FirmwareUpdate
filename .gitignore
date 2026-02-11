@@ -1,0 +1,20 @@
+# --- CUSTOM (STM32) Klasörü İçin ---
+CUSTOM/**/Debug/
+CUSTOM/**/Release/
+CUSTOM/**/*.elf
+CUSTOM/**/*.bin
+CUSTOM/**/*.hex
+CUSTOM/**/*.map
+CUSTOM/**/*.lst
+CUSTOM/**/.settings/
+CUSTOM/**/.metadata/
+
+# --- Uploader (Python) Klasörü İçin ---
+Uploader/**/__pycache__/
+Uploader/**/*.py[cod]
+Uploader/**/venv/
+Uploader/**/.env
+
+# --- Genel Sistem Dosyaları ---
+.DS_Store
+Thumbs.db

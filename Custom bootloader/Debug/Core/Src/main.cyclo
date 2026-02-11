@@ -1,0 +1,8 @@
+../Core/Src/main.c:87:6:Bootloader_Menu	4
+../Core/Src/main.c:107:6:Flash_Erase_Application	1
+../Core/Src/main.c:126:6:Bootloader_Handle_Secure_Write	8
+../Core/Src/main.c:191:6:jump_to_application	1
+../Core/Src/main.c:225:5:main	2
+../Core/Src/main.c:287:6:SystemClock_Config	3
+../Core/Src/main.c:330:10:Compute_CRC16	4
+../Core/Src/main.c:352:6:Error_Handler	1

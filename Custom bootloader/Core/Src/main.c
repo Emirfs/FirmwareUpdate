@@ -17,29 +17,29 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
-#include "usart.h"
-#include "gpio.h"
-#include "aes.h"
-#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
 
-// Python tarafındaki KEY ve IV ile birebir aynı olmalı!
-
+#include "main.h"
+#include "usart.h"
+#include "gpio.h"
+#include "aes.h"
+#include <string.h>
+#include "crc.h"
 #define ACK  0x06
 #define NACK 0x15
 #define APP_ADDRESS 0x08008000
 #define PACKET_SIZE 128
+
+extern CRC_HandleTypeDef hcrc;
+extern void MX_CRC_Init(void);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-// Tırnak yerine süslü parantez kullanarak null-terminator riskini yok et
-/* main.c içinde - Tırnak kullanmadan ham byte olarak tanımlayalım */
-// main.c içinde
+
 uint8_t AES_KEY[32] = {
     0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, // 1234567890
     0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, // 1234567890
@@ -59,7 +59,7 @@ void Bootloader_Menu(void);
 void Bootloader_Handle_Secure_Write(void);
 void Flash_Erase_Application(void);
 void jump_to_application(void);
-uint16_t Compute_CRC16(uint8_t *data, uint16_t length);
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -77,129 +77,13 @@ uint16_t Compute_CRC16(uint8_t *data, uint16_t length);
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-uint16_t Compute_CRC16(uint8_t *data, uint16_t length);
+
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* --- BOOTLOADER MANTIĞI --- */
-void Bootloader_Menu(void) {
-    uint8_t rx_byte;
-    char *msg = "\r\n--- STM32 Bootloader Beklemede ---\r\n'W' tuşuna basarak yazılımı gönderin...\r\n";
 
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET); // Turuncu LED: Bootloader Aktif
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-
-    while(1) {
-        if (HAL_UART_Receive(&huart2, &rx_byte, 1, HAL_MAX_DELAY) == HAL_OK) {
-        	/* main.c - Bootloader_Menu Fonksiyonu İçinde */
-        	if (rx_byte == 'W' || rx_byte == 'w') {
-        	    // ESKİ: Bootloader_Handle_Write(); -> Bunu sil
-        	    Bootloader_Handle_Secure_Write(); // YENİ: Güvenli versiyonu çağır
-        	}
-            }
-        }
-    }
-
-
-/* --- FLASH SİLME FONKSİYONU --- */
-void Flash_Erase_Application(void) {
-    HAL_FLASH_Unlock();
-    FLASH_EraseInitTypeDef EraseInitStruct;
-    uint32_t SectorError;
-
-    EraseInitStruct.TypeErase = FLASH_TYPEERASE_SECTORS;
-    EraseInitStruct.VoltageRange = FLASH_VOLTAGE_RANGE_3;
-    EraseInitStruct.Sector = FLASH_SECTOR_2; // Sektör 2 (0x08008000)
-    EraseInitStruct.NbSectors = 6;           // Uygulama alanını kapsayan sektörleri sil
-
-    if (HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError) != HAL_OK) {
-        // Hata durumunda NACK gönderilebilir
-    }
-    HAL_FLASH_Lock();
-}
-/**
- * @brief AES-256 Şifreli ve CRC-16 Korumalı Yazılım Güncelleme
- * Bu fonksiyon her paketi çözer, doğrular ve Flash belleğe yazar.
- */
-void Bootloader_Handle_Secure_Write(void) {
-    uint8_t rx_buffer[130];        // 128 Byte Şifreli Veri + 2 Byte CRC
-    uint32_t current_addr = APP_ADDRESS; // 0x08008000
-    struct AES_ctx ctx;
-    uint8_t ack = ACK;             // 0x06
-    uint8_t nack = NACK;           // 0x15
-
-    // 1. ADIM: Uygulama alanını temizle
-    Flash_Erase_Application();
-
-    // 2. ADIM: Python'a "Hazırım, gönder" onayı ver
-    HAL_UART_Transmit(&huart2, &ack, 1, 10);
-
-    while(1) {
-        // 3. ADIM: Paketi bekle (Timeout süresini 10sn yaparak senkronizasyonu koru)
-        HAL_StatusTypeDef status = HAL_UART_Receive(&huart2, rx_buffer, 130, 10000);
-
-        if (status == HAL_OK) {
-            // 4. ADIM: CRC-16 Kontrolü (Veri yolda bozuldu mu?)
-            uint16_t received_crc = *(uint16_t*)(&rx_buffer[128]);
-            if (Compute_CRC16(rx_buffer, 128) != received_crc) {
-                HAL_UART_Transmit(&huart2, &nack, 1, 10);
-                continue; // Paketi tekrar bekle
-            }
-
-            // 5. ADIM: AES-256 Şifre Çözme (CBC Modu)
-            // Her paket başında IV resetleyerek Python ile senkron kalınır.
-            AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
-            AES_CBC_decrypt_buffer(&ctx, rx_buffer, 128);
-
-            // 6. ADIM: MSP Doğrulaması (Sadece ilk paket için)
-            if (current_addr == APP_ADDRESS) {
-                uint32_t msp_val = *(uint32_t*)rx_buffer;
-                // STM32F4 için MSP 0x2000xxxx (RAM) olmalıdır
-                if ((msp_val & 0xFFF00000) != 0x20000000) {
-                    // Teşhis için ilk 4 byte'ı geri gönder ve işlemi bitir
-                    HAL_UART_Transmit(&huart2, rx_buffer, 4, 100);
-                    HAL_UART_Transmit(&huart2, &nack, 1, 10);
-                    return;
-                }
-            }
-
-            // 7. ADIM: Flash Belleğe Yazma (4'er byte - Word)
-            HAL_FLASH_Unlock();
-            for (int i = 0; i < 128; i += 4) {
-                uint32_t data = *(uint32_t*)(&rx_buffer[i]);
-                if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, current_addr, data) == HAL_OK) {
-                    current_addr += 4;
-                }
-            }
-            HAL_FLASH_Lock();
-
-            // 8. ADIM: Onay (ACK) gönder ve sonraki pakete geç
-            HAL_UART_Transmit(&huart2, &ack, 1, 10);
-        }
-        else if (status == HAL_TIMEOUT) {
-            // Veri akışı bitti, uygulamaya zıpla
-            jump_to_application();
-            break;
-        }
-    }
-}
-/* --- UART VERİ ALMA VE FLASH'A YAZMA --- */
-
-/* --- UYGULAMAYA ZIPLAMA (JUMP) --- */
-void jump_to_application(void) {
-    uint32_t jump_addr = *(uint32_t*)(APP_ADDRESS + 4);
-    void (*app_reset_handler)(void) = (void (*)(void))jump_addr;
-
-    __disable_irq(); // Kesmeleri kapat
-    HAL_RCC_DeInit();
-    HAL_DeInit();
-    SysTick->CTRL = 0;
-
-    __set_MSP(*(uint32_t*)APP_ADDRESS); // MSP ayarla
-    app_reset_handler(); // Uygulama başlasın!
-}
 
 
 typedef struct {
@@ -209,6 +93,7 @@ typedef struct {
     uint8_t  data[1024]; // Veri (Maksimum 1KB)
     uint32_t crc;        // Hata kontrolü
 } Bootloader_Packet_t;
+
 
 /* USER CODE END 0 */
 
@@ -220,11 +105,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	    HAL_Init();
-	    SystemClock_Config();
-	    MX_GPIO_Init();
-	    MX_USART2_UART_Init();
-	    SCB->VTOR = 0x08000000;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -234,19 +115,6 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
-
-  // Mavi butona basılıyor mu? (Discovery kartında genelde GPIO_PIN_0)
-  if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
-  {
-      // Butona basılıyor: Bootloader'da kal!
-      // Burada örneğin Turuncu LED'i yak ve UART ile yeni kod bekleyen fonksiyonu çağır
-      Bootloader_Menu();
-  }
-  else
-  {
-      // Butona basılmıyor: Direkt uygulamaya git!
-      jump_to_application();
-  }
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -259,8 +127,18 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+  SCB->VTOR = 0x08000000;
 
+  if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+  {
+      Bootloader_Menu();
+  }
+  else
+  {
+      jump_to_application();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -291,14 +169,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 50;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 168;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -314,29 +191,141 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
 }
 
 /* USER CODE BEGIN 4 */
-uint16_t Compute_CRC16(uint8_t *data, uint16_t length) {
-    uint16_t crc = 0xFFFF; // Başlangıç değeri
+uint32_t Calculate_CRC32(const uint8_t* data, uint32_t length_bytes)
+{
+    uint32_t crc = 0xFFFFFFFF;
+    for (uint32_t i = 0; i < length_bytes; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 1)
+                crc = (crc >> 1) ^ 0xEDB88320;
+            else
+                crc >>= 1;
+        }
+    }
+    return crc ^ 0xFFFFFFFF;
+}
 
-    for (uint16_t i = 0; i < length; i++) {
-        crc ^= (uint16_t)data[i]; // Mevcut byte'ı CRC ile XOR'la
 
-        for (uint8_t j = 0; j < 8; j++) {
-            if (crc & 0x0001) {
-                crc = (crc >> 1) ^ 0xA001; // En önemsiz bit 1 ise polinomla XOR'la
-            } else {
-                crc >>= 1; // Değilse sadece sağa kaydır
+void Bootloader_Menu(void) {
+    uint8_t rx_byte;
+    char *msg = "\r\n--- STM32 Bootloader Beklemede ---\r\n'W' tuşuna basarak yazılımı gönderin...\r\n";
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
+    while(1) {
+        if (HAL_UART_Receive(&huart2, &rx_byte, 1, HAL_MAX_DELAY) == HAL_OK) {
+            if (rx_byte == 'W' || rx_byte == 'w') {
+                Bootloader_Handle_Secure_Write();
             }
         }
     }
-    return crc;
 }
+
+void Bootloader_Handle_Secure_Write(void) {
+    uint8_t rx_buffer[148]; // 16 IV + 128 Encrypted + 4 CRC
+    uint32_t current_addr = APP_ADDRESS;
+    struct AES_ctx ctx;
+    uint8_t ack = ACK;
+    uint8_t nack = NACK;
+
+    // 1. Flash temizle
+    Flash_Erase_Application();
+
+    // 2. Python'a hazır sinyali gönder
+    HAL_UART_Transmit(&huart2, &ack, 1, 10);
+
+    while(1) {
+        // 3. Paketi bekle: [IV:16] + [Encrypted:128] + [CRC:4] = 148 byte
+        HAL_StatusTypeDef status = HAL_UART_Receive(&huart2, rx_buffer, 148, 10000);
+
+        if (status == HAL_OK) {
+            uint8_t  *iv_ptr        = &rx_buffer[0];      // İlk 16 byte = IV
+            uint8_t  *encrypted_ptr = &rx_buffer[16];     // Sonraki 128 byte = Şifreli veri
+            uint32_t received_crc   = *(uint32_t*)(&rx_buffer[144]); // Son 4 byte = CRC
+
+            // 4. CRC-32 doğrulaması (şifreli veri üzerinden)
+            uint32_t computed_crc = Calculate_CRC32(encrypted_ptr, 128);
+
+            if (computed_crc != received_crc) {
+                // Debug: ilk 4 byte encrypted + computed CRC + received CRC (raw)
+                HAL_UART_Transmit(&huart2, encrypted_ptr, 4, 100);   // ilk 4 byte veri
+                HAL_UART_Transmit(&huart2, (uint8_t*)&computed_crc, 4, 100);
+                HAL_UART_Transmit(&huart2, (uint8_t*)&received_crc, 4, 100);
+                HAL_UART_Transmit(&huart2, &nack, 1, 10);
+                continue;
+            }
+
+            // 5. AES-256 CBC şifre çözme (paketten gelen IV ile)
+            AES_init_ctx_iv(&ctx, AES_KEY, iv_ptr);
+            AES_CBC_decrypt_buffer(&ctx, encrypted_ptr, 128);
+
+            // 6. MSP doğrulaması (sadece ilk paket)
+            if (current_addr == APP_ADDRESS) {
+                uint32_t msp_val = *(uint32_t*)encrypted_ptr;
+                if ((msp_val & 0xFFF00000) != 0x20000000) {
+                    HAL_UART_Transmit(&huart2, &nack, 1, 10);
+                    return;
+                }
+            }
+
+            // 7. Flash'a yaz (4'er byte - Word)
+            HAL_FLASH_Unlock();
+            for (int i = 0; i < 128; i += 4) {
+                uint32_t data = *(uint32_t*)(&encrypted_ptr[i]);
+                if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, current_addr, data) == HAL_OK) {
+                    current_addr += 4;
+                }
+            }
+            HAL_FLASH_Lock();
+
+            // 8. ACK gönder
+            HAL_UART_Transmit(&huart2, &ack, 1, 10);
+        }
+        else if (status == HAL_TIMEOUT) {
+            jump_to_application();
+            break;
+        }
+    }
+}
+void jump_to_application(void) {
+    uint32_t jump_addr = *(uint32_t*)(APP_ADDRESS + 4);
+    void (*app_reset_handler)(void) = (void (*)(void))jump_addr;
+
+    __disable_irq(); // Kesmeleri kapat
+    HAL_RCC_DeInit();
+    HAL_DeInit();
+    SysTick->CTRL = 0;
+
+    __set_MSP(*(uint32_t*)APP_ADDRESS); // MSP ayarla
+    app_reset_handler(); // Uygulama başlasın!
+}
+
+void Flash_Erase_Application(void) {
+    HAL_FLASH_Unlock();
+    FLASH_EraseInitTypeDef EraseInitStruct;
+    uint32_t SectorError;
+
+    EraseInitStruct.TypeErase = FLASH_TYPEERASE_SECTORS;
+    EraseInitStruct.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+    EraseInitStruct.Sector = FLASH_SECTOR_2; // Sektör 2 (0x08008000)
+    EraseInitStruct.NbSectors = 6; // Uygulama alanını kapsayan sektörleri sil
+
+    if (HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError) != HAL_OK) {
+        // Hata durumunda NACK gönderilebilir
+    }
+    HAL_FLASH_Lock();
+}
+
+
 /* USER CODE END 4 */
 
 /**

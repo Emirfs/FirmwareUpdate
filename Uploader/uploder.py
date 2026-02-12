@@ -8,7 +8,7 @@ from Crypto.Cipher import AES
 SERIAL_PORT = 'COM7'
 BAUD_RATE   = 115200
 # Cloud dosya adresi (Direct Download Link olmalı)
-BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1H2BGb3goFmNS8tdjiaYHJSMgJ0YBVyKk"
+BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1wEAiVGAYpgohjBnXafgznp38CN4soFu0"
 
 KEY = b'12345678901234567890123456789012' #
 IV  = b'abcdefghijklmnop'
@@ -73,7 +73,7 @@ def upload_from_cloud():
             cipher = AES.new(KEY, AES.MODE_CBC, IV)
             encrypted = cipher.encrypt(packet)
             crc_val = calculate_crc16(encrypted)
-            
+            print( AES.new(KEY, AES.MODE_CBC, IV).decrypt(encrypted)[:len(packet)].rstrip(b'\x00').hex() ) # Şifre çözülmüş veriyi göster
             # Paketi Gönder
             ser.write(encrypted + crc_val.to_bytes(2, 'little'))
             

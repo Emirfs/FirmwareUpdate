@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := CUSTOM
+BUILD_ARTIFACT_NAME := Custom bootloader
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-CUSTOM.elf \
+Custom\ bootloader.elf \
 
 MAP_FILES += \
-CUSTOM.map \
+Custom\ bootloader.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-CUSTOM.list \
+Custom\ bootloader.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: CUSTOM.elf secondary-outputs
+main-build: Custom\ bootloader.elf secondary-outputs
 
 # Tool invocations
-CUSTOM.elf CUSTOM.map: $(OBJS) $(USER_OBJS) C:\Users\Emir\ Furkan\STM32CubeIDE\workspace_1.19.0\CUSTOM\STM32F407VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "CUSTOM.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Emir Furkan\STM32CubeIDE\workspace_1.19.0\CUSTOM\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="CUSTOM.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Custom\ bootloader.elf Custom\ bootloader.map: $(OBJS) $(USER_OBJS) C:\Users\Emir\ Furkan\Desktop\FirmwareUpdate\Custom\ bootloader\STM32F407VGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Custom bootloader.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Emir Furkan\Desktop\FirmwareUpdate\Custom bootloader\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Custom bootloader.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-CUSTOM.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "CUSTOM.list"
+Custom\ bootloader.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Custom bootloader.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) CUSTOM.elf CUSTOM.list CUSTOM.map default.size.stdout
+	-$(RM) Custom\ bootloader.elf Custom\ bootloader.list Custom\ bootloader.map Custom\\ bootloader.elf default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

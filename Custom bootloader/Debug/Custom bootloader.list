@@ -1959,6 +1959,9 @@ void Bootloader_Handle_Secure_Write(void) {
  8000fa6:	f5a3 73de 	sub.w	r3, r3, #444	@ 0x1bc
  8000faa:	601a      	str	r2, [r3, #0]
 
+
+
+
             if (computed_crc != received_crc) {
  8000fac:	f507 73e0 	add.w	r3, r7, #448	@ 0x1c0
  8000fb0:	f5a3 73de 	sub.w	r3, r3, #444	@ 0x1bc

@@ -10,7 +10,7 @@ import zlib
 SERIAL_PORT = 'COM7'
 BAUD_RATE   = 115200
 # Cloud dosya adresi (Direct Download Link olmalı)
-BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1wEAiVGAYpgohjBnXafgznp38CN4soFu0"
+BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1RwY5ADahHXT4FHEk4gqs9DOdid2teWON"
 
 KEY = b'12345678901234567890123456789012'
 PACKET_SIZE = 128
@@ -73,7 +73,8 @@ def upload_from_cloud():
             # Şifreleme (tek sefer)
             cipher = AES.new(KEY, AES.MODE_CBC, iv)
             encrypted = cipher.encrypt(packet)
-
+            crc_val_raw = calculate_crc32(http_response.content)
+            print(f"crc32 raw: 0x{crc_val_raw:08X}")    
             # CRC-32 hesapla (encrypted üzerinden)
             crc_val = calculate_crc32(encrypted)
             print(f"Paket {packet_index} — CRC-32 (encrypted): 0x{crc_val:08X}")

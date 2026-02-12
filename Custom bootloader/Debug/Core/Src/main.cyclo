@@ -3,6 +3,6 @@
 ../Core/Src/main.c:201:10:Calculate_CRC32	4
 ../Core/Src/main.c:217:6:Bootloader_Menu	4
 ../Core/Src/main.c:233:6:Bootloader_Handle_Secure_Write	8
-../Core/Src/main.c:299:6:jump_to_application	1
-../Core/Src/main.c:312:6:Flash_Erase_Application	1
-../Core/Src/main.c:335:6:Error_Handler	1
+../Core/Src/main.c:302:6:jump_to_application	1
+../Core/Src/main.c:315:6:Flash_Erase_Application	1
+../Core/Src/main.c:338:6:Error_Handler	1

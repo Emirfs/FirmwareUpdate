@@ -255,6 +255,9 @@ void Bootloader_Handle_Secure_Write(void) {
             // 4. CRC-32 doğrulaması (şifreli veri üzerinden)
             uint32_t computed_crc = Calculate_CRC32(encrypted_ptr, 128);
 
+
+
+
             if (computed_crc != received_crc) {
                 // Debug: ilk 4 byte encrypted + computed CRC + received CRC (raw)
                 HAL_UART_Transmit(&huart2, encrypted_ptr, 4, 100);   // ilk 4 byte veri

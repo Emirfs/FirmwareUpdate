@@ -3,138 +3,164 @@ import time
 import requests
 import io
 import os
+import sys
 from Crypto.Cipher import AES
 import zlib
 
 # --- AYARLAR ---
 SERIAL_PORT = 'COM7'
 BAUD_RATE   = 115200
+
 # Cloud dosya adresi (Direct Download Link olmalı)
-BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1RwY5ADahHXT4FHEk4gqs9DOdid2teWON"
+BIN_FILE_URL = "https://drive.google.com/uc?export=download&id=1YOQiPoHZ2D2RTP8xroTUG9fAXh1dliGZ"
 
 KEY = b'12345678901234567890123456789012'
 PACKET_SIZE = 128
 MAX_RETRIES = 3
+FIRMWARE_VERSION = 1  # Her yeni firmware'de bu numarayı artırın! takip edebilmek için durabilir??????????????
 
 def calculate_crc32(data):
     return zlib.crc32(data) & 0xFFFFFFFF
+
+def progress_bar(current, total, width=40):
+    """Terminal'de ilerleme çubuğu göster."""
+    percent = current * 100 // total
+    filled = width * current // total
+    bar = '█' * filled + '░' * (width - filled)
+    print(f"\r  [{bar}] {percent}% ({current}/{total})", end='', flush=True)
 
 def upload_from_cloud():
     ser = None
     firmware_data = None
 
     try:
-        # 1. DOSYAYI BULUTTAN ÇEK
-        print(f"Dosya indiriliyor: {BIN_FILE_URL}")
-        http_response = requests.get(BIN_FILE_URL, timeout=10)
-        http_response.raise_for_status()
+        # ═══════════════════════════════════════════════
+        # 1. DOSYAYI İNDİR
+        # ═══════════════════════════════════════════════
+        print(f"📥 Dosya indiriliyor...")
+        resp = requests.get(BIN_FILE_URL, timeout=30)
+        resp.raise_for_status()
 
-        # GÜVENLİK KONTROLÜ: Content-Type ve içerik kontrolü
-        content_type = http_response.headers.get('Content-Type', '')
-        if 'text/html' in content_type or b'<html' in http_response.content[:100].lower():
-            raise ValueError("İndirilen dosya binary değil, HTML gibi görünüyor!")
+        if 'text/html' in resp.headers.get('Content-Type', ''):
+            raise ValueError("İndirilen dosya binary değil!")
 
-        # --- TEŞHİS BÖLÜMÜ ---
-        raw_header = http_response.content[:16].hex()
-        print(f"Buluttan gelen ham verinin ilk 16 byte'ı: {raw_header}")
+        raw_firmware = resp.content
+        firmware_size = len(raw_firmware)
+        firmware_crc = calculate_crc32(raw_firmware)
+        total_packets = (firmware_size + PACKET_SIZE - 1) // PACKET_SIZE
 
-        # 2. VERİYİ RAM ÜZERİNE YÜKLE (Diske yazılmaz!)
-        firmware_data = io.BytesIO(http_response.content)
-        firmware_size = len(http_response.content)
-        print(f"Dosya RAM'e alındı. Boyut: {firmware_size} byte")
+        print(f"✅ Boyut: {firmware_size} byte | CRC: 0x{firmware_crc:08X} | Paket: {total_packets}")
+        firmware_data = io.BytesIO(raw_firmware)
 
-        # 3. SERİ PORTU AÇ
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=5)
-        ser.write(b'W')  # Uyandırma
+        # ═══════════════════════════════════════════════
+        # 2. SERİ PORT AÇ (DTR toggle → MCU reset → temiz başlangıç)
+        # ═══════════════════════════════════════════════
+        print(f"\n🔌 {SERIAL_PORT} açılıyor...")
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=15)
+        time.sleep(2)  # MCU reset + boot süresi
+        ser.reset_input_buffer()  # Eski veriyi temizle
 
-        if ser.read(1) != b'\x06':  # ACK
-            print("Hata: STM32 hazır değil!")
+        # ═══════════════════════════════════════════════
+        # 3. HANDSHAKE: 'W' gönder → ACK bekle
+        # ═══════════════════════════════════════════════
+        print("📡 'W' gönderiliyor...")
+        ser.write(b'W')
+
+        ack = ser.read(1)
+        if ack != b'\x06':
+            print(f"❌ ACK gelmedi! Gelen: {ack.hex() if ack else 'boş'}")
             return
+        print("✅ ACK alındı!")
 
-        print("Güvenli (AES-256) RAM transferi başlıyor...")
+        # ═══════════════════════════════════════════════
+        # 4. METADATA GÖNDER → ACK bekle
+        # ═══════════════════════════════════════════════
+        metadata = (
+            firmware_size.to_bytes(4, 'little') +
+            FIRMWARE_VERSION.to_bytes(4, 'little') +
+            firmware_crc.to_bytes(4, 'little')
+        )
+        ser.write(metadata)
 
+        ack = ser.read(1)
+        if ack != b'\x06':
+            print(f"❌ Metadata reddedildi! Gelen: {ack.hex() if ack else 'boş'}")
+            return
+        print("✅ Metadata kabul edildi!")
+
+        # ═══════════════════════════════════════════════
+        # 5. FLASH SİLME BEKLENİYOR → ACK bekle (uzun sürer)
+        # ═══════════════════════════════════════════════
+        print("⏳ Flash siliniyor (bu ~10 saniye sürebilir)...")
+
+        ack = ser.read(1)  # timeout=15 saniye
+        if ack != b'\x06':
+            print(f"❌ Flash silme başarısız! Gelen: {ack.hex() if ack else 'boş'}")
+            return
+        print("✅ Flash silindi!")
+
+        # ═══════════════════════════════════════════════
+        # 6. PAKET TRANSFERİ
+        # ═══════════════════════════════════════════════
+        print(f"\n🚀 Transfer başlıyor...\n")
         packets_sent = 0
-        packet_index = 0
-
+        ser.reset_input_buffer()
         while True:
-            # RAM'deki dosyadan 128 byte oku
             packet = firmware_data.read(PACKET_SIZE)
             if not packet:
                 break
 
-            packet_index += 1
-
-            # Padding (son paket 128 byte'tan küçükse sıfırla doldur)
             packet = packet.ljust(PACKET_SIZE, b'\x00')
-
-            # Her paket için benzersiz IV üret (güvenlik)
             iv = os.urandom(16)
-
-            # Şifreleme (tek sefer)
             cipher = AES.new(KEY, AES.MODE_CBC, iv)
             encrypted = cipher.encrypt(packet)
-            crc_val_raw = calculate_crc32(http_response.content)
-            print(f"crc32 raw: 0x{crc_val_raw:08X}")    
-            # CRC-32 hesapla (encrypted üzerinden)
             crc_val = calculate_crc32(encrypted)
-            print(f"Paket {packet_index} — CRC-32 (encrypted): 0x{crc_val:08X}")
 
-            # Paketi Gönder: IV (16 byte) + encrypted (128 byte) + CRC (4 byte)
             payload = iv + encrypted + crc_val.to_bytes(4, 'little')
 
-            # Retry mekanizması
             success = False
             for attempt in range(1, MAX_RETRIES + 1):
                 ser.write(payload)
-
-                # ACK/NAK Bekle (debug: 13 byte = 4 data + 4 computed + 4 received + 1 ACK/NAK)
-                stm_response = ser.read(13)
-
-                if not stm_response:
-                    print(f"  Paket {packet_index} deneme {attempt}: STM'den cevap gelmedi!")
-                    continue
-
-                if len(stm_response) >= 13:
-                    stm_first4 = stm_response[0:4].hex()
-                    stm_computed = int.from_bytes(stm_response[4:8], 'little')
-                    stm_received = int.from_bytes(stm_response[8:12], 'little')
-                    py_first4 = encrypted[0:4].hex()
-                    print(f"  STM ilk4: {stm_first4} | PY ilk4: {py_first4}")
-                    print(f"  STM computed: 0x{stm_computed:08X} | STM received: 0x{stm_received:08X} | PY CRC: 0x{crc_val:08X}")
-                    ack_nack = stm_response[12]
-                else:
-                    ack_nack = stm_response[-1] if stm_response else 0
-                    print(f"  STM raw: {stm_response.hex()}")
-
-                if ack_nack == 0x06 or b'\x06' in stm_response:
-                    # ACK alındı
+                time.sleep(0.005)
+                resp = ser.read(1)  # Sadece 1 byte: ACK veya NAK
+                if resp == b'\x06':
                     packets_sent += 1
-                    success = True
+                    success = True  
+                    time.sleep(0.05)
                     break
-                elif ack_nack == 0x15 or b'\x15' in stm_response:
-                    # NAK alındı — tekrar dene
-                    print(f"  Paket {packet_index} NAK aldı (deneme {attempt}/{MAX_RETRIES})")
+                elif resp == b'\x15':
+                    print(f"\n  ⚠️  NAK paket {packets_sent+1} (deneme {attempt})")
                     time.sleep(0.01)
                 else:
-                    print(f"  Paket {packet_index} bilinmeyen cevap: {stm_response.hex()}")
-                    break
+                    print(f"\n  ❓ Bilinmeyen: {resp.hex() if resp else 'boş'}")
 
             if not success:
-                print(f"HATA: Paket {packet_index}, {MAX_RETRIES} denemede gönderilemedi. İşlem durduruluyor.")
+                print(f"\n❌ Paket {packets_sent+1} gönderilemedi!")
                 return
 
-            if packets_sent % 10 == 0:
-                print(f"  İlerleme: {packets_sent} paket gönderildi...")
-
+            progress_bar(packets_sent, total_packets)
             time.sleep(0.005)
 
-        print(f"\n--- GÜVENLİ GÜNCELLEME TAMAMLANDI ({packets_sent} paket) ---")
+        # ═══════════════════════════════════════════════
+        # 7. FİNAL DOĞRULAMA
+        # ═══════════════════════════════════════════════
+        print(f"\n\n⏳ Firmware doğrulanıyor...")
 
+        ack = ser.read(1)
+        if ack == b'\x06':
+            print(f"\n{'='*50}")
+            print(f"  ✅ GÜNCELLEME BAŞARILI!")
+            print(f"  📦 {packets_sent} paket | v{FIRMWARE_VERSION}")
+            print(f"  🔒 CRC: 0x{firmware_crc:08X}")
+            print(f"{'='*50}")
+        else:
+            print(f"\n❌ Doğrulama başarısız!")
+
+    except serial.SerialException as e:
+        print(f"❌ Seri port hatası: {e}")
     except Exception as e:
-        print(f"Hata oluştu: {e}")
-
+        print(f"❌ Hata: {e}")
     finally:
-        # Kaynakları her durumda kapat
         if firmware_data:
             firmware_data.close()
         if ser and ser.is_open:

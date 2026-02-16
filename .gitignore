@@ -1,20 +1,46 @@
-# --- CUSTOM (STM32) Klasörü İçin ---
-CUSTOM/**/Debug/
-CUSTOM/**/Release/
-CUSTOM/**/*.elf
-CUSTOM/**/*.bin
-CUSTOM/**/*.hex
-CUSTOM/**/*.map
-CUSTOM/**/*.lst
-CUSTOM/**/.settings/
-CUSTOM/**/.metadata/
+# ── STM32 (Custom bootloader) ──
+Custom bootloader/Debug/
+Custom bootloader/Release/
+Custom bootloader/.settings/
+Custom bootloader/.metadata/
+Custom bootloader/**/*.elf
+Custom bootloader/**/*.bin
+Custom bootloader/**/*.hex
+Custom bootloader/**/*.map
+Custom bootloader/**/*.lst
+Custom bootloader/**/*.o
+Custom bootloader/**/*.d
+Custom bootloader/**/*.su
 
-# --- Uploader (Python) Klasörü İçin ---
-Uploader/**/__pycache__/
-Uploader/**/*.py[cod]
-Uploader/**/venv/
-Uploader/**/.env
+# ── Python (Uploader) ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+*.whl
+venv/
+.env/
 
-# --- Genel Sistem Dosyaları ---
-.DS_Store
+# ── PyInstaller ──
+Uploader/build/
+Uploader/dist/
+*.spec
+
+# ── Encrypted config (hassas veri — repo'ya konmamalı) ──
+config.enc
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ──
 Thumbs.db
+.DS_Store
+desktop.ini
+
+# ── Logs ──
+*.log

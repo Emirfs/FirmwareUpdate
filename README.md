@@ -10,7 +10,11 @@
 *The application starts with a secure login to prevent unauthorized access to the configuration.*
 ![Login Screen](assets/gui_login.png)
 
-### 2. Admin Panel & Settings
+### 2. Firmware Selection & Scanning (New)
+*Users can scan the Google Drive folder to list all available firmware versions (BIN & HEX) and select the desired version from a dropdown menu.*
+![Firmware Selection](assets/gui_selection.png)
+
+### 3. Admin Panel & Settings
 *Authenticated users can configure AES keys, Google Drive File IDs, and update the STM32's internal key remotely.*
 ![Admin Panel](assets/gui_admin.png)
 
@@ -32,7 +36,7 @@ This project provides a complete system for securely updating firmware on STM32 
 | Component | Description |
 |-----------|-------------|
 | **Custom Bootloader** (C) | Receives, verifies, decrypts, and flashes firmware. Manages AES key storage. |
-| **Python Uploader** (PC) | Downloads firmware from Google Drive, encrypts with AES-256, and sends over UART. |
+| **Python Uploader** (PC) | Scans Google Drive for firmware versions (BIN/HEX), converts HEX to BIN, encrypts, and flashes over UART. |
 | **GUI Application** (Tkinter) | Standalone .exe with admin panel, encrypted config, and remote key management. |
 
 ## 🔄 System Flowcharts
@@ -208,6 +212,12 @@ STM32F407VGT6 - 1 MB Flash
   0x080FFFFF  +-------------------------+
 ```
 
+## 🛠 Troubleshooting
+
+- **Application Disappears/Crashes:** If the app closes immediately after starting or minimizing, check the `crash_log.txt` file in the same directory.
+- **No Console Output:** Since the application runs in no-console mode, standard output is redirected to `application.log`. Check this file for runtime errors.
+- **Drive API Errors:** Ensure `service_account.json` is valid and the Google Drive folder ID is correct.
+
 ---
 
 # Turkce
@@ -218,7 +228,11 @@ STM32F407VGT6 - 1 MB Flash
 *Uygulama, yapilandirmanin yetkisiz erisimden korunmasi icin guvenli bir giris ekrani ile baslar.*
 ![Login Screen](assets/gui_login.png)
 
-### 2. Admin Paneli & Ayarlar
+### 2. Firmware Seçimi ve Tarama (Yeni)
+*Kullanıcılar Google Drive klasörünü tarayarak mevcut tüm firmware sürümlerini (BIN & HEX) listeleyebilir ve dropdown menüden seçim yapabilir.*
+![Firmware Seçimi](assets/gui_selection.png)
+
+### 3. Admin Paneli & Ayarlar
 *Yetkili kullanicilar AES anahtarlarini, Google Drive Dosya ID'lerini yonetebilir ve STM32'nin dahili anahtarini uzaktan guncelleyebilir.*
 ![Admin Panel](assets/gui_admin.png)
 
@@ -372,6 +386,12 @@ STM32F407VGT6 - 1 MB Flash
 3. **Admin Girisi:** Ilk acilista admin sifrenizi belirleyin.
 4. **Ayarlar:** AES Anahtari, Drive ID ve Port ayarlarini girip "Sifreli Kaydet"e basin.
 5. **Guncelleme:** STM32'yi PA0 butonuyla boot moduna alip guncellemeyi baslatin.
+
+## 🛠 Sorun Giderme
+
+- **Uygulama Kapanıyor/Kayboluyor:** Uygulama açıldıktan veya küçültüldükten sonra kapanıyorsa, aynı dizindeki `crash_log.txt` dosyasını kontrol edin.
+- **Konsol Çıktısı Yok:** Uygulama konsolsuz modda çalıştığı için standart çıktılar `application.log` dosyasına kaydedilir. Çalışma zamanı hataları için bu dosyayı inceleyin.
+- **Drive API Hataları:** `service_account.json` dosyasının geçerli olduğundan ve Google Drive Klasör ID'sinin doğru olduğundan emin olun.
 
 ---
 

@@ -36,7 +36,7 @@ config.enc
 *.swp
 *.swo
 *~
-
+*.json
 # ── OS ──
 Thumbs.db
 .DS_Store

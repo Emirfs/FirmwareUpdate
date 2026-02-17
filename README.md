@@ -8,7 +8,7 @@
 
 ### 1. Login Screen
 *The application starts with a secure login to prevent unauthorized access to the configuration.*
-![Login Screen](assets/gui_login.png)
+![Login Screen](assets/gui_login1.png)
 
 ### 2. Firmware Selection & Scanning (New)
 *Users can scan the Google Drive folder to list all available firmware versions (BIN & HEX) and select the desired version from a dropdown menu.*
